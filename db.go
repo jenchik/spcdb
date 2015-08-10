@@ -104,8 +104,7 @@ func (r *record) String() string {
 	if r == nil {
 		return ""
 	}
-    s := make([]string, len(r.raw))
-    s = append(s, "Record[")
+    s := make([]string, 0, len(r.raw))
 	for key, _ := range r.raw {
         s = append(s, fmt.Sprintf("\"%s\":\"%s\"", key, r.GetInString(key)))
 	}
