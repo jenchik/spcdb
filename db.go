@@ -108,7 +108,7 @@ func (r *record) String() string {
 	for key, _ := range r.raw {
         s = append(s, fmt.Sprintf("\"%s\":\"%s\"", key, r.GetInString(key)))
 	}
-	return "Record[" + strings.Join(s, ", ") + "]"
+	return "{" + strings.Join(s, ", ") + "}"
 }
 
 func (r *record) Get(key string) interface{} {
