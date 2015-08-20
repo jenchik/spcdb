@@ -13,6 +13,11 @@ import (
 	"github.com/mitchellh/mapstructure"
 )
 
+var (
+    AttributeName = "mapstructure"
+    TimeFormat = "2006-01-02 15:04:05"
+)
+
 type DBMediator interface {
 	DB() *DB
 }
@@ -44,18 +49,21 @@ type record struct {
 	m   sync.RWMutex
 }
 
-func mapToMap(recMap reflect.Value, recType reflect.Type, dst map[string]reflect.Value) {
-	// TODO
+func recFromMap(recMap reflect.Value, recType reflect.Type, dst map[string]reflect.Value) {
+    dstVal := reflect.Indirect(reflect.ValueOf(dst))
+	for _, k := range recMap.MapKeys() {
+        dstVal.SetMapIndex(k, recMap.MapIndex(k))
+    }
 }
 
-func mapToStruct(valStruct reflect.Value, typeStruct reflect.Type, dst map[string]reflect.Value) {
+func recFromStruct(valStruct reflect.Value, typeStruct reflect.Type, dst map[string]reflect.Value) {
 	for i := 0; i < typeStruct.NumField(); i++ {
 		typeField := typeStruct.Field(i)
 		if !unicode.IsUpper(rune(typeField.Name[0])) {
 			continue
 		}
 
-		recName := typeField.Tag.Get("record")
+		recName := typeField.Tag.Get(AttributeName)
 		if recName == "" {
 			if typeField.Anonymous {
 				continue
@@ -73,7 +81,7 @@ func mapToStruct(valStruct reflect.Value, typeStruct reflect.Type, dst map[strin
 	}
 }
 
-func mapTo(recObj reflect.Value, dst map[string]reflect.Value) {
+func recFrom(recObj reflect.Value, dst map[string]reflect.Value) {
 	if recObj.Kind() == reflect.Ptr {
 		recObj = recObj.Elem()
 	}
@@ -81,9 +89,9 @@ func mapTo(recObj reflect.Value, dst map[string]reflect.Value) {
 
 	switch typeObj.Kind() {
 		case reflect.Struct:
-			mapToStruct(recObj, typeObj, dst)
+			recFromStruct(recObj, typeObj, dst)
 		case reflect.Map:
-			mapToMap(recObj, typeObj, dst)
+			recFromMap(recObj, typeObj, dst)
 	}
 }
 
@@ -96,7 +104,7 @@ func NewRecord(mapToObj ...interface{}) Record {
 			continue
 		}
 		obj := normalizeValue(reflect.ValueOf(val))
-		mapTo(obj, rec.raw)
+		recFrom(obj, rec.raw)
 	}
 	return rec
 }
@@ -156,12 +164,14 @@ func (r *record) GetInString(key string) string {
 		str = s
 	case int, int8, int16, int32, int64, uint, uint8, uint16, uint32, uint64:
 		str = fmt.Sprintf("%d", s)
+	case float32, float64:
+		str = fmt.Sprintf("%f", s)
 	case []byte:
 		str = string(s[:])
 	case bool:
 		str = strconv.FormatBool(s)
 	case time.Time:
-		str = s.Format("2006-01-02 15:04:05")
+		str = s.Format(TimeFormat)
 	default:
 		str = fmt.Sprintf("%v", el.Interface())
 	}
@@ -198,17 +208,11 @@ func (r *record) Model(rawVal interface{}) error {
 	r.m.RLock()
 	defer r.m.RUnlock()
 
-	return newModel(r.raw, rawVal, func(in, out reflect.Type, data interface{}) (interface{}, error) {
-        dataMap, ok := data.(map[string]reflect.Value)
-        if !ok {
-            return data, nil
-        }
-        ret := make(map[string]interface{}, len(dataMap))
-        for key, val := range dataMap {
-            ret[key] = val.Interface()
-        }
-        return ret, nil
-    })
+    dataMap := make(map[string]interface{}, len(r.raw))
+    for key, val := range r.raw {
+        dataMap[key] = val.Interface()
+    }
+	return newModel(r.raw, rawVal)
 }
 
 func (db *DB) ExistsRecord(query string, args ...interface{}) error {
@@ -238,17 +242,11 @@ func (db *DB) QueryModel(query string, model interface{}, args ...interface{}) e
 		return err
 	}
     container := newContainer(rows, cols)
-	return newModel(container, model, func(in, out reflect.Type, data interface{}) (interface{}, error) {
-        dataMap, ok := data.(map[string]interface{})
-        if !ok {
-            return data, nil
-        }
-        for key, val := range dataMap {
-            //dataMap[key] = *(*interface{})(&val)
-            dataMap[key] = reflect.ValueOf(val).Elem().Interface()
-        }
-        return dataMap, nil
-    })
+    for key, val := range container {
+        //container[key] = *(*interface{})(&val)
+        container[key] = reflect.ValueOf(val).Elem().Interface()
+    }
+	return newModel(container, model)
 }
 
 func (db *DB) QueryRecords(query string, args ...interface{}) ([]Record, error) {
@@ -324,12 +322,12 @@ func newRecord(rows *sql.Rows, cols []string) Record {
 	return &rec
 }
 
-func newModel(src, dst interface{}, decodeHook mapstructure.DecodeHookFuncType) error {
+func newModel(src, dst interface{}) error {
 	config := &mapstructure.DecoderConfig{
-        DecodeHook:       decodeHook,
 		Metadata:         nil,
 		Result:           dst,
 		WeaklyTypedInput: true,
+        TagName:          AttributeName,
 	}
 
 	decoder, err := mapstructure.NewDecoder(config)
