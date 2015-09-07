@@ -212,7 +212,7 @@ func (r *record) Model(rawVal interface{}) error {
     for key, val := range r.raw {
         dataMap[key] = val.Interface()
     }
-	return newModel(r.raw, rawVal)
+	return newModel(dataMap, rawVal)
 }
 
 func (db *DB) ExistsRecord(query string, args ...interface{}) error {
