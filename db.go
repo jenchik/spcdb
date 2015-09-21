@@ -241,7 +241,10 @@ func (db *DB) QueryModel(query string, model interface{}, args ...interface{}) e
 	if err != nil {
 		return err
 	}
-    container := newContainer(rows, cols)
+    container, err := newContainer(rows, cols)
+    if err != nil {
+        return err
+    }
     for key, val := range container {
         //container[key] = *(*interface{})(&val)
         container[key] = reflect.ValueOf(val).Elem().Interface()
@@ -256,13 +259,17 @@ func (db *DB) QueryRecords(query string, args ...interface{}) ([]Record, error) 
 	}
 	defer rows.Close()
 
-	ret := make([]Record, 0, 10)
 	cols, err := rows.Columns()
 	if err != nil {
-		return ret, err
+		return nil, err
 	}
+	ret := make([]Record, 0, 10)
 	for rows.Next() {
-		ret = append(ret, newRecord(rows, cols))
+        rec, err := newRecord(rows, cols)
+        if err != nil {
+            return nil, err
+        }
+		ret = append(ret, rec)
 	}
 	return ret, err
 }
@@ -281,7 +288,7 @@ func (db *DB) QueryRecord(query string, args ...interface{}) (Record, error) {
 	if err != nil {
 		return nil, err
 	}
-	return newRecord(rows, cols), err
+	return newRecord(rows, cols)
 }
 
 func normalizeValue(value reflect.Value) reflect.Value {
@@ -292,7 +299,7 @@ func normalizeValue(value reflect.Value) reflect.Value {
 	return value
 }
 
-func newContainer(rows *sql.Rows, cols []string) map[string]interface{} {
+func newContainer(rows *sql.Rows, cols []string) (map[string]interface{}, error) {
 	/*
 		ptrs := make([]interface{}, len(cols))
 		cont := make([]string, len(cols))
@@ -309,17 +316,20 @@ func newContainer(rows *sql.Rows, cols []string) map[string]interface{} {
 		container[cols[i]] = &v
 		pointers[i] = &v
 	}
-	rows.Scan(pointers...)
-    return container
+	err := rows.Scan(pointers...)
+    return container, err
 }
 
-func newRecord(rows *sql.Rows, cols []string) Record {
-    container := newContainer(rows, cols)
+func newRecord(rows *sql.Rows, cols []string) (Record, error) {
+    container, err := newContainer(rows, cols)
+    if err != nil {
+        return nil, err
+    }
 	rec := record{raw: make(map[string]reflect.Value, len(cols))}
 	for key, value := range container {
 		rec.raw[key] = reflect.Indirect(reflect.ValueOf(value)).Elem()
 	}
-	return &rec
+	return &rec, nil
 }
 
 func newModel(src, dst interface{}) error {
