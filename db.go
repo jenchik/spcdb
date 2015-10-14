@@ -210,7 +210,11 @@ func (r *record) Model(rawVal interface{}) error {
 
     dataMap := make(map[string]interface{}, len(r.raw))
     for key, val := range r.raw {
-        dataMap[key] = val.Interface()
+        if !val.IsValid() {
+            dataMap[key] = nil
+        } else {
+            dataMap[key] = val.Interface()
+        }
     }
 	return newModel(dataMap, rawVal)
 }
